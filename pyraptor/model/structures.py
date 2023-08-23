@@ -49,7 +49,7 @@ class Stop:
     id = attr.ib(default=None)
     name = attr.ib(default=None)
     station: Station = attr.ib(default=None)
-    platform_code = attr.ib(default=None)
+    # platform_code = attr.ib(default=None)
     index = attr.ib(default=None)
 
     def __hash__(self):
@@ -290,7 +290,7 @@ class Trip:
     def get_stop(self, stop: Stop) -> TripStopTime:
         """Get stop"""
         return self.stop_times[self.stop_times_index[stop]]
-    
+
     def get_fare(self, depart_stop: Stop) -> int:
         """Get fare from depart_stop"""
         stop_time = self.get_stop(depart_stop)
@@ -554,8 +554,8 @@ class Leg:
             to_station=self.to_stop.station.name,
             trip_hint=self.trip.hint,
             trip_long_name=self.trip.long_name,
-            from_platform_code=self.from_stop.platform_code,
-            to_platform_code=self.to_stop.platform_code,
+            # from_platform_code=self.from_stop.platform_code,
+            # to_platform_code=self.to_stop.platform_code,
             fare=self.fare,
         )
 
@@ -747,22 +747,24 @@ class Journey:
         for leg in self:
             msg = (
                 str(sec2str(leg.dep))
-                + " "
+                + " ["
                 + leg.from_stop.station.name.ljust(20)
-                + "(p. "
-                + str(leg.from_stop.platform_code).rjust(3)
-                + ") TO "
+                # + "(p. "
+                # + str(leg.from_stop.platform_code).rjust(3)
+                # + ") TO "
+                + "] TO "
                 + str(sec2str(leg.arr))
-                + " "
+                + " ["
                 + leg.to_stop.station.name.ljust(20)
-                + "(p. "
-                + str(leg.to_stop.platform_code).rjust(3)
-                + ") WITH "
-                + str(leg.trip.hint)
+                + "]"
+                # + "(p. "
+                # + str(leg.to_stop.platform_code).rjust(3)
+                # + ") WITH "
+                # + str(leg.trip.hint)
             )
             logger.info(msg)
 
-        logger.info(f"Fare: €{self.fare()}")
+        # logger.info(f"Fare: €{self.fare()}")
 
         msg = f"Duration: {sec2str(self.travel_time())}"
         if dep_secs:

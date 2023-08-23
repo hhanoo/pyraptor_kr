@@ -25,6 +25,7 @@ from pyraptor.model.structures import (
     Transfers,
 )
 
+from tqdm import tqdm
 
 @dataclass
 class GtfsTimetable:
@@ -43,7 +44,7 @@ def parse_arguments():
         "-i",
         "--input",
         type=str,
-        default="data/input/NL-gtfs",
+        default="data/KR-gtfs",
         help="Input directory",
     )
     parser.add_argument(
@@ -56,18 +57,18 @@ def parse_arguments():
     parser.add_argument(
         "-d", "--date", type=str, default="20210906", help="Departure date (yyyymmdd)"
     )
-    parser.add_argument("-a", "--agencies", nargs="+", default=["NS"])
+    parser.add_argument("-a", "--agencies", nargs="+", default=["KTDB"])
     parser.add_argument("--icd", action="store_true", help="Add ICD fare(s)")
     arguments = parser.parse_args()
     return arguments
 
 
 def main(
-    input_folder: str,
-    output_folder: str,
-    departure_date: str,
-    agencies: List[str],
-    icd_fix: bool = False,
+        input_folder: str,
+        output_folder: str,
+        departure_date: str,
+        agencies: List[str],
+        icd_fix: bool = False,
 ):
     """Main function"""
 
@@ -80,7 +81,7 @@ def main(
 
 
 def read_gtfs_timetable(
-    input_folder: str, departure_date: str, agencies: List[str]
+        input_folder: str, departure_date: str, agencies: List[str]
 ) -> GtfsTimetable:
     """Extract operators from GTFS data"""
 
@@ -103,6 +104,7 @@ def read_gtfs_timetable(
     routes = routes[
         ["route_id", "agency_id", "route_short_name", "route_long_name", "route_type"]
     ]
+    routes = routes[routes["route_type"].isin([0, 1, 3, 4])]
 
     # Read trips
     logger.debug("Read Trips")
@@ -114,11 +116,11 @@ def read_gtfs_timetable(
             "route_id",
             "service_id",
             "trip_id",
-            "trip_short_name",
-            "trip_long_name",
+            # "trip_short_name",
+            # "trip_long_name",
         ]
     ]
-    trips["trip_short_name"] = trips["trip_short_name"].astype("Int64")
+    # trips["trip_short_name"] = trips["trip_short_name"].astype("Int64")
 
     # Read calendar
     logger.debug("Read Calendar")
@@ -136,8 +138,16 @@ def read_gtfs_timetable(
     logger.debug("Read Stop Times")
 
     stop_times = pd.read_csv(
-        os.path.join(input_folder, "stop_times.txt"), dtype={"stop_id": str}
+        os.path.join(input_folder, "stop_times.txt"), dtype={"stop_id": str, "pickup_type": str, "drop_off_type": str},
     )
+    # '-' 값을 포함한 행 삭제
+    stop_times = stop_times[stop_times['pickup_type'] != '-']
+    stop_times = stop_times[stop_times['drop_off_type'] != '-']
+
+    # 'pickup_type' 열을 정수로 변환
+    stop_times['pickup_type'] = stop_times['pickup_type'].astype(int)
+    stop_times['pickup_type'] = stop_times['drop_off_type'].astype(int)
+
     stop_times = stop_times[stop_times.trip_id.isin(trips.trip_id.values)]
     stop_times = stop_times[
         [
@@ -163,23 +173,23 @@ def read_gtfs_timetable(
     ].copy()
 
     # Read stopareas, i.e. stations
-    stopareas = stops["parent_station"].unique()
+    # stopareas = stops["parent_station"].unique()
     # stops = stops.append(.copy())
-    stops = pd.concat([stops, stops_full.loc[stops_full["stop_id"].isin(stopareas)]])
+    # stops = pd.concat([stops, stops_full.loc[stops_full["stop_id"].isin(stopareas)]])
 
     # stops["zone_id"] = stops["zone_id"].str.replace("IFF:", "").str.upper()
-    stops["stop_code"] = stops.stop_code.str.upper()
+    # stops["stop_code"] = stops.stop_code.str.upper()
     stops = stops[
         [
             "stop_id",
             "stop_name",
-            "parent_station",
-            "platform_code",
+            # "parent_station",
+            # "platform_code",
         ]
     ]
 
     # Filter out the general station codes
-    stops = stops.loc[~stops.parent_station.isna()]
+    # stops = stops.loc[~stops.parent_station.isna()]
 
     gtfs_timetable = GtfsTimetable()
     gtfs_timetable.trips = trips
@@ -190,7 +200,7 @@ def read_gtfs_timetable(
 
 
 def gtfs_to_pyraptor_timetable(
-    gtfs_timetable: GtfsTimetable, icd_fix: bool = False
+        gtfs_timetable: GtfsTimetable, icd_fix: bool = False
 ) -> Timetable:
     """
     Convert timetable for usage in Raptor algorithm.
@@ -203,14 +213,15 @@ def gtfs_to_pyraptor_timetable(
     stations = Stations()
     stops = Stops()
 
-    gtfs_timetable.stops.platform_code = gtfs_timetable.stops.platform_code.fillna("?")
+    # gtfs_timetable.stops.platform_code = gtfs_timetable.stops.platform_code.fillna("?")
 
     for s in gtfs_timetable.stops.itertuples():
         station = Station(s.stop_name, s.stop_name)
         station = stations.add(station)
 
-        stop_id = f"{s.stop_name}-{s.platform_code}"
-        stop = Stop(s.stop_id, stop_id, station, s.platform_code)
+        # stop_id = f"{s.stop_name}-{s.platform_code}"
+        stop_id = f"{s.stop_name}"
+        stop = Stop(s.stop_id, stop_id, station)
 
         station.add_stop(stop)
         stops.add(stop)
@@ -226,10 +237,10 @@ def gtfs_to_pyraptor_timetable(
     trips = Trips()
     trip_stop_times = TripStopTimes()
 
-    for trip_row in gtfs_timetable.trips.itertuples():
+    for trip_row in tqdm(gtfs_timetable.trips.itertuples(), desc="Processing trips"):
         trip = Trip()
-        trip.hint = trip_row.trip_short_name  # i.e. treinnummer
-        trip.long_name = trip_row.trip_long_name  # e.g., Sprinter
+        # trip.hint = trip_row.trip_short_name  # i.e. treinnummer
+        # trip.long_name = trip_row.trip_long_name  # e.g., Sprinter
 
         # Iterate over stops
         sort_stop_times = sorted(
@@ -244,7 +255,8 @@ def gtfs_to_pyraptor_timetable(
             stop = stops.get(stop_time.stop_id)
 
             # GTFS files do not contain ICD supplement fare, so hard-coded here
-            fare = calculate_icd_fare(trip, stop, stations) if icd_fix is True else 0
+            # fare = calculate_icd_fare(trip, stop, stations) if icd_fix is True else 0
+            fare = 0
             trip_stop_time = TripStopTime(trip, stopidx, stop, dts_arr, dts_dep, fare)
 
             trip_stop_times.add(trip_stop_time)
@@ -295,9 +307,9 @@ def calculate_icd_fare(trip: Trip, stop: Stop, stations: Stations) -> int:
     fare = 0
     if 900 <= trip.hint <= 1099:
         if (
-            trip.hint % 2 == 0 and stop.station == stations.get("Schiphol Airport")
+                trip.hint % 2 == 0 and stop.station == stations.get("Schiphol Airport")
         ) or (
-            trip.hint % 2 == 1 and stop.station == stations.get("Rotterdam Centraal")
+                trip.hint % 2 == 1 and stop.station == stations.get("Rotterdam Centraal")
         ):
             fare = 1.67
         else:
