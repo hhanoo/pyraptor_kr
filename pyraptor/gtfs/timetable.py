@@ -110,6 +110,7 @@ def read_gtfs_timetable(
     logger.debug("Read Trips")
 
     trips = pd.read_csv(os.path.join(input_folder, "trips.txt"))
+    trips = trips[trips['trip_id'].str.contains('BR_1100_10')] # 데이터 파일에서 제한한 일부 조건 (임시)
     trips = trips[trips.route_id.isin(routes.route_id.values)]
     trips = trips[
         [
@@ -140,6 +141,8 @@ def read_gtfs_timetable(
     stop_times = pd.read_csv(
         os.path.join(input_folder, "stop_times.txt"), dtype={"stop_id": str, "pickup_type": str, "drop_off_type": str},
     )
+
+    # 특정 문제 해결 또는 조건 제한을 위한 코드 구현 (145 ~ 159)
     # '-' 값을 포함한 행 삭제
     stop_times = stop_times[stop_times['pickup_type'] != '-']
     stop_times = stop_times[stop_times['drop_off_type'] != '-']
@@ -147,6 +150,13 @@ def read_gtfs_timetable(
     # 'pickup_type' 열을 정수로 변환
     stop_times['pickup_type'] = stop_times['pickup_type'].astype(int)
     stop_times['pickup_type'] = stop_times['drop_off_type'].astype(int)
+    stop_times_1 = stop_times[stop_times['stop_id'].str.contains('BS_1100_10')]
+
+    # 데이터프레임들을 리스트에 저장
+    dataframes = [stop_times_1]
+
+    # concat 함수를 사용하여 데이터프레임들 연결
+    stop_times = pd.concat(dataframes, ignore_index=True)
 
     stop_times = stop_times[stop_times.trip_id.isin(trips.trip_id.values)]
     stop_times = stop_times[
@@ -215,7 +225,8 @@ def gtfs_to_pyraptor_timetable(
 
     # gtfs_timetable.stops.platform_code = gtfs_timetable.stops.platform_code.fillna("?")
 
-    for s in gtfs_timetable.stops.itertuples():
+    for s in tqdm(gtfs_timetable.stops.itertuples(), total=len(gtfs_timetable.stops),
+                          desc="Processing stop_times"):
         station = Station(s.stop_name, s.stop_name)
         station = stations.add(station)
 
@@ -228,7 +239,8 @@ def gtfs_to_pyraptor_timetable(
 
     # Stop Times
     stop_times = defaultdict(list)
-    for stop_time in gtfs_timetable.stop_times.itertuples():
+    for stop_time in tqdm(gtfs_timetable.stop_times.itertuples(), total=len(gtfs_timetable.stop_times),
+                          desc="Processing stop_times"):
         stop_times[stop_time.trip_id].append(stop_time)
 
     # Trips and Trip Stop Times
@@ -237,7 +249,7 @@ def gtfs_to_pyraptor_timetable(
     trips = Trips()
     trip_stop_times = TripStopTimes()
 
-    for trip_row in tqdm(gtfs_timetable.trips.itertuples(), desc="Processing trips"):
+    for trip_row in tqdm(gtfs_timetable.trips.itertuples(), total=len(gtfs_timetable.trips), desc="Processing trips"):
         trip = Trip()
         # trip.hint = trip_row.trip_short_name  # i.e. treinnummer
         # trip.long_name = trip_row.trip_long_name  # e.g., Sprinter
